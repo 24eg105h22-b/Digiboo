@@ -1,0 +1,9 @@
+# Security and Privacy
+
+Camera captures, uploaded images, and generated final JPG exports are processed and stored client-side only, in the active browser session. The app does not upload user photos or camera frames to a server, API, analytics service, or cloud backend. The app does not persist user photo bytes in localStorage, sessionStorage, IndexedDB, cookies, Cache API, service worker caches, browser databases, or any server-side file store. No user photo data is sent in request bodies, URLs, query strings, headers, or telemetry payloads.
+
+Photo handling stays local to the browser: uploaded files are limited to JPEG, PNG, and WebP, size-checked before decoding, and re-encoded in memory so embedded EXIF metadata is not retained. Temporary upload object URLs are revoked immediately after image preparation. Generated JPG exports exist only as a temporary browser Blob and object URL for 60 seconds; expiry revokes the URL, clears the Blob reference, clears export state, and resets the strip preview. Leaving or restarting the session also clears captured photo state, stops camera tracks, clears the video source, and resets the active session state.
+
+The browser may fetch fixed landing-page artwork from Unsplash and fonts from Google Fonts. These are static assets only; user photos are not sent with those requests. A file already downloaded by the user is outside the app's control and cannot be remotely deleted.
+
+Production deployments should use HTTPS and the response headers in `vercel.json`. Keep source maps disabled, do not add photo persistence or telemetry, and run `npm audit`, `npm run lint`, and `npm run build` before release.

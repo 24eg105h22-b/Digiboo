@@ -184,7 +184,92 @@ const themes = themeDefinitions.map((settings) => {
   }
 })
 
-function getThemeByName(name) {
+function getCustomStripPhotoSlots(count) {
+  const n = Math.max(1, Math.min(6, Number(count) || 4))
+  const config = {
+    1: { margin: 0.08, gap: 0, height: 0.84, width: 0.88, x: 0.06 },
+    2: { margin: 0.04, gap: 0.04, height: 0.44, width: 0.84, x: 0.08 },
+    3: { margin: 0.03, gap: 0.03, height: 0.293, width: 0.82, x: 0.09 },
+    4: { margin: 0.015, gap: 0.028, height: 0.22, width: 0.78, x: 0.11 },
+    5: { margin: 0.015, gap: 0.02, height: 0.178, width: 0.76, x: 0.12 },
+    6: { margin: 0.012, gap: 0.016, height: 0.149, width: 0.74, x: 0.13 },
+  }[n]
+
+  return Array.from({ length: n }, (_, index) => ({
+    x: config.x,
+    y: config.margin + index * (config.height + config.gap),
+    width: config.width,
+    height: config.height,
+    rotation: 0,
+    offsetX: 0,
+    offsetY: 0,
+    minWidth: 0.06,
+    minHeight: 0.06,
+    minAspectRatio: 0.2,
+    maxAspectRatio: 4.5,
+    preferredWidth: config.width,
+    preferredHeight: config.height,
+    preferredAspectRatio: config.width / config.height,
+    fitStrategy: 'filled-frame',
+    zIndex: 10,
+    layer: 'photo',
+  }))
+}
+
+let activeCustomStripPhotoCount = 4
+
+const customStripThemeCache = new Map()
+
+function getCustomStripTheme(photoCount) {
+  const count = Math.max(1, Math.min(6, Number(photoCount ?? activeCustomStripPhotoCount) || 4))
+  if (customStripThemeCache.has(count)) {
+    return customStripThemeCache.get(count)
+  }
+  const slots = getCustomStripPhotoSlots(count)
+  const theme = {
+    ...themes[0],
+    id: `custom-photo-strip-${count}`,
+    name: 'Custom Photo Strip',
+    category: 'Classic',
+    description: 'Create a classic photobooth strip with your own photos',
+    photoCount: count,
+    requiredPhotoCount: count,
+    orientation: 'vertical',
+    photoHeaderSpace: false,
+    visualFamily: 'Classic & Minimal',
+    layout: 'vertical-strip',
+    visualStyle: 'vertical-strip',
+    background: '#faf6f0',
+    frame: '#ffffff',
+    accent: '#cf3557',
+    text: '#2b2124',
+    backgroundStyle: 'clean-cream',
+    slotFrameStyle: 'clean',
+    borderStyle: { kind: 'keyline', weight: 2, inset: 18, innerInset: 6 },
+    decorationStyle: { kind: 'dots', size: 3, count: 0 },
+    decorations: [],
+    photoSlots: slots,
+    alternatePhotoSlots: slots,
+    composition: {
+      layout: 'vertical-strip',
+      orientation: 'vertical',
+      photoCount: count,
+      canvasFormat: 'portrait',
+      photoSlots: slots,
+      background: 'clean-cream',
+      defaultFilter: 'original',
+      frame: 'clean',
+      visualFamily: 'Classic & Minimal',
+      decorations: { kind: 'dots', size: 3, count: 0 },
+      stickerCategory: 'Classic',
+    },
+  }
+  customStripThemeCache.set(count, theme)
+  return theme
+}
+
+function getThemeByName(name, photoCount) {
+  if (name === 'Custom Photo Strip') return getCustomStripTheme(photoCount)
   return themes.find((theme) => theme.name === name) ?? themes[0]
 }
 
@@ -328,14 +413,11 @@ function ThemeArtwork({ theme }) {
   )
 }
 
-function LandingPage({ selectedTheme, setSelectedTheme, onContinue }) {
+function LandingPage({ selectedTheme, setSelectedTheme, onContinue, customPhotoCount, setCustomPhotoCount }) {
   const [activeCategory, setActiveCategory] = useState('All')
   const [searchQuery, setSearchQuery] = useState('')
-  const featuredThemes = themes.slice(0, 6).map((theme, index) => ({
-    themeName: theme.name,
-    label: ['Love Collage', 'Polaroid Memories', 'Retro Film', 'Party Memories', 'Scrapbook Moments', 'Classic Grid'][index] ?? theme.name,
-    theme,
-  }))
+  const [showPhotoCountModal, setShowPhotoCountModal] = useState(false)
+  const [selectedPhotoCount, setSelectedPhotoCount] = useState(customPhotoCount ?? 4)
   const [cursorHearts, setCursorHearts] = useState([])
   const cursorHeartId = useRef(0)
   const lastCursorHeartAt = useRef(0)
@@ -460,45 +542,153 @@ function LandingPage({ selectedTheme, setSelectedTheme, onContinue }) {
             </div>
             <div className="scene-sticker sticker-bottom"><span>✳</span> KEEP THIS ONE</div>
           </div>
-
-          <div className="featured-themes" aria-label="Featured photobooth themes">
-            <div className="featured-themes-heading">
-              <span>FEATURED THEME PREVIEWS</span>
-              <span>Choose a look to start</span>
-            </div>
-            <div className="featured-theme-list">
-              {featuredThemes.map(({ theme, label }) => (
-                <button
-                  className={`featured-theme featured-${theme.visualStyle}`}
-                  key={theme.name}
-                  type="button"
-                  onClick={() => {
-                    setSelectedTheme(theme.name)
-                    onContinue()
-                  }}
-                  aria-label={`Choose ${label}, ${theme.photoCount} photos, ${theme.orientation}`}
-                >
-                  <span className="featured-theme-art">
-                    <ThemeArtwork theme={theme} />
-                  </span>
-                  <span className="featured-theme-caption">
-                    <span>
-                      <strong>{label}</strong>
-                      <small>{theme.photoCount} photos · {theme.orientation}</small>
-                    </span>
-                    <span className="featured-theme-action">Choose <i aria-hidden="true">↗</i></span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
         </section>
 
-        <section className="themes-section" id="themes" aria-labelledby="themes-title">
+        <section className="themes-section" id="themes" aria-labelledby="custom-strip-title">
+          <div
+            className={`custom-strip-card${selectedTheme === 'Custom Photo Strip' ? ' is-selected' : ''}`}
+            onClick={() => setSelectedTheme('Custom Photo Strip')}
+            role="region"
+            aria-label="Custom Photo Strip option"
+          >
+            <div className="custom-strip-content">
+              <div className="custom-strip-badge">
+                <span className="custom-strip-badge-dot" aria-hidden="true" />
+                <span>ORIGINAL PHOTOBOOTH FORMAT</span>
+              </div>
+              <h2 className="custom-strip-title" id="custom-strip-title">
+                CUSTOM PHOTO STRIP
+              </h2>
+              <p className="custom-strip-subtitle">
+                Create a classic photobooth strip with your own photos
+              </p>
+              <ul className="custom-strip-features">
+                <li><span className="feature-check" aria-hidden="true">✓</span> 4 vertical photos in classic booth format</li>
+                <li><span className="feature-check" aria-hidden="true">✓</span> Capture live with webcam or upload photos</li>
+                <li><span className="feature-check" aria-hidden="true">✓</span> Move, rotate, add text & stickers</li>
+              </ul>
+              <div className="custom-strip-actions">
+                <button
+                  className="button button-primary custom-strip-cta"
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setSelectedTheme('Custom Photo Strip')
+                    setShowPhotoCountModal(true)
+                  }}
+                >
+                  Create Custom Strip <span aria-hidden="true">↗</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="custom-strip-preview-wrapper" aria-hidden="true">
+              <div className="custom-strip-preview-strip">
+                <div className="preview-strip-header">
+                  <span className="preview-strip-logo">SNAP STUDIO</span>
+                  <span className="preview-strip-stars">✦ ✦ ✦</span>
+                </div>
+                <div className="preview-strip-slots">
+                  {[1, 2, 3, 4].map((slotNum) => (
+                    <div className="preview-strip-slot" key={slotNum}>
+                      <div className="preview-strip-slot-box">
+                        <svg className="preview-slot-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                          <circle cx="8.5" cy="8.5" r="1.5" />
+                          <polyline points="21 15 16 10 5 21" />
+                        </svg>
+                        <span className="preview-slot-label">PHOTO {slotNum}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="preview-strip-footer">
+                  <span>EST. TODAY</span>
+                  <span>4 PHOTOS</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {showPhotoCountModal && (
+            <div
+              className="custom-count-backdrop"
+              onClick={() => setShowPhotoCountModal(false)}
+              role="presentation"
+            >
+              <div
+                className="custom-count-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="photo-count-heading"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  className="modal-close-button"
+                  type="button"
+                  aria-label="Close"
+                  onClick={() => setShowPhotoCountModal(false)}
+                >
+                  ×
+                </button>
+                <p className="eyebrow"><span className="eyebrow-dot" /> CUSTOM PHOTO STRIP</p>
+                <h3 id="photo-count-heading">How many photos?</h3>
+                <p className="custom-count-description">
+                  Choose how many photos to include on your vertical strip.
+                </p>
+
+                <div className="photo-count-selector" role="group" aria-label="How many photos?">
+                  {[1, 2, 3, 4, 5, 6].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      className={`photo-count-btn${selectedPhotoCount === num ? ' is-active is-selected' : ''}`}
+                      aria-pressed={selectedPhotoCount === num}
+                      onClick={() => setSelectedPhotoCount(num)}
+                    >
+                      {num}
+                    </button>
+                  ))}
+                </div>
+
+                <p className="photo-count-hint">
+                  {selectedPhotoCount === 1 && '1 photo · Large vertical showcase'}
+                  {selectedPhotoCount === 2 && '2 photos · Generous dual-frame layout'}
+                  {selectedPhotoCount === 3 && '3 photos · Classic vertical trio'}
+                  {selectedPhotoCount === 4 && '4 photos · Classic photobooth proportions'}
+                  {selectedPhotoCount === 5 && '5 photos · Extended memory strip'}
+                  {selectedPhotoCount === 6 && '6 photos · Six-frame story strip'}
+                </p>
+
+                <div className="custom-count-actions">
+                  <button
+                    className="button button-primary custom-count-continue"
+                    type="button"
+                    onClick={() => {
+                      activeCustomStripPhotoCount = selectedPhotoCount
+                      if (setCustomPhotoCount) setCustomPhotoCount(selectedPhotoCount)
+                      setSelectedTheme('Custom Photo Strip')
+                      setShowPhotoCountModal(false)
+                      onContinue()
+                    }}
+                  >
+                    Continue with {selectedPhotoCount} {selectedPhotoCount === 1 ? 'Photo' : 'Photos'} <span aria-hidden="true">→</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="themes-gallery-divider">
+            <span className="divider-line" />
+            <span className="divider-badge">OR CHOOSE FROM 115 THEMES</span>
+            <span className="divider-line" />
+          </div>
+
           <div className="section-heading">
             <div>
               <p className="eyebrow"><span className="eyebrow-dot" /> PICK YOUR PICTURE-PERFECT MOOD</p>
-              <h2 id="themes-title">Find a look for <em>every memory.</em></h2>
+              <h2 id="themes-title">Choose a theme</h2>
             </div>
             <p className="section-description">
               Choose a look for your strip. The only wrong move is not getting in the frame.
@@ -589,8 +779,19 @@ function LandingPage({ selectedTheme, setSelectedTheme, onContinue }) {
             <p className="theme-empty-state">No themes match “{searchQuery.trim()}”. Try another search.</p>
           )}
           <div className="theme-continue-row">
-            <p aria-live="polite">{selectedTheme ? `${selectedTheme} · ${getThemeByName(selectedTheme).requiredPhotoCount} photos` : 'Choose a theme to get started.'}</p>
-            <button className="button button-primary" type="button" onClick={onContinue} disabled={!selectedTheme}>
+            <p aria-live="polite">{selectedTheme ? `${selectedTheme} · ${getThemeByName(selectedTheme, customPhotoCount).requiredPhotoCount} photos` : 'Choose a theme to get started.'}</p>
+            <button
+              className="button button-primary"
+              type="button"
+              onClick={() => {
+                if (selectedTheme === 'Custom Photo Strip') {
+                  setShowPhotoCountModal(true)
+                } else {
+                  onContinue()
+                }
+              }}
+              disabled={!selectedTheme}
+            >
               Continue <span aria-hidden="true">→</span>
             </button>
           </div>
@@ -609,12 +810,12 @@ function LandingPage({ selectedTheme, setSelectedTheme, onContinue }) {
   )
 }
 
-function SourceChooser({ selectedTheme, onTakePhotos, onUploadPhotos }) {
+function SourceChooser({ selectedTheme, onTakePhotos, onUploadPhotos, customPhotoCount, onSetCustomPhotoCount }) {
   const [uploadError, setUploadError] = useState('')
   const [uploadExpanded, setUploadExpanded] = useState(false)
-  const [uploadSlots, setUploadSlots] = useState(() => Array.from({ length: getThemeByName(selectedTheme).requiredPhotoCount }, () => null))
+  const theme = getThemeByName(selectedTheme, customPhotoCount)
+  const [uploadSlots, setUploadSlots] = useState(() => Array.from({ length: theme.requiredPhotoCount }, () => null))
   const [activeUploadSlot, setActiveUploadSlot] = useState(0)
-  const theme = getThemeByName(selectedTheme)
   const uploadSlotsRef = useRef(uploadSlots)
 
   useEffect(() => {
@@ -683,9 +884,27 @@ function SourceChooser({ selectedTheme, onTakePhotos, onUploadPhotos }) {
   return (
     <main className="booth-main source-main">
       <div className="booth-intro">
-        <p className="eyebrow"><span className="eyebrow-dot" /> {theme.requiredPhotoCount} PHOTOS · {theme.name.toUpperCase()}</p>
+        <p className="eyebrow"><span className="eyebrow-dot" /> {theme.requiredPhotoCount} {theme.requiredPhotoCount === 1 ? 'PHOTO' : 'PHOTOS'} · {theme.name.toUpperCase()}</p>
         <h1>How do you want to <em>make it?</em></h1>
-        <p>Take {theme.requiredPhotoCount} photos with your camera, or upload them one at a time from your device.</p>
+        <p>Take {theme.requiredPhotoCount} {theme.requiredPhotoCount === 1 ? 'photo' : 'photos'} with your camera, or upload them one at a time from your device.</p>
+        {selectedTheme === 'Custom Photo Strip' && onSetCustomPhotoCount && (
+          <div className="source-count-bar">
+            <span className="source-count-label">How many photos?</span>
+            <div className="source-count-pills" role="group" aria-label="Select photo count">
+              {[1, 2, 3, 4, 5, 6].map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  className={`source-count-pill${theme.requiredPhotoCount === num ? ' is-active' : ''}`}
+                  aria-pressed={theme.requiredPhotoCount === num}
+                  onClick={() => onSetCustomPhotoCount(num)}
+                >
+                  {num}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       <div className="source-options">
         <button className="source-option" type="button" onClick={onTakePhotos}>
@@ -714,7 +933,7 @@ function SourceChooser({ selectedTheme, onTakePhotos, onUploadPhotos }) {
               return (
                 <div key={`upload-slot-${slotIndex}`} className={`upload-slot${slot ? ' is-filled' : ''}${isActive ? ' is-active' : ''}`}>
                   <div className="upload-slot-header">
-                    <span>Photo {slotIndex + 1}</span>
+                    <span>Photo {slotIndex + 1} of {theme.requiredPhotoCount}</span>
                     <span>{slot ? '✓ Added' : 'Waiting'}</span>
                   </div>
                   {slot ? (
@@ -733,7 +952,7 @@ function SourceChooser({ selectedTheme, onTakePhotos, onUploadPhotos }) {
                   ) : (
                     <label className={`upload-slot-picker${isActive ? ' is-highlighted' : ''}`}>
                       <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => handleSlotSelection(event, slotIndex)} aria-label={`Select photo ${slotIndex + 1} of ${theme.requiredPhotoCount}`} />
-                      <span>{isActive ? `Select Photo ${slotIndex + 1}` : `Select Photo`}</span>
+                      <span>{isActive ? `Select Photo ${slotIndex + 1} of ${theme.requiredPhotoCount}` : `Select Photo ${slotIndex + 1}`}</span>
                     </label>
                   )}
                 </div>
@@ -901,8 +1120,8 @@ function CameraWorkspace({
   )
 }
 
-function PhotoReview({ capturedPhotos, onContinue, onRetake, selectedTheme }) {
-  const activeTheme = getThemeByName(selectedTheme)
+function PhotoReview({ capturedPhotos, onContinue, onRetake, selectedTheme, customPhotoCount }) {
+  const activeTheme = getThemeByName(selectedTheme, customPhotoCount)
 
   return (
     <main className="booth-main review-main">
@@ -2307,6 +2526,17 @@ function getPhotoPositions(theme, width, height, images, contentTop, footerY) {
   const contentWidth = width * 0.86
   const contentHeight = footerY - contentTop - 24
   const contentAspectRatio = contentWidth / contentHeight
+  if (theme.name === 'Custom Photo Strip') {
+    return theme.photoSlots.slice(0, images.length).map((photoSlot) => ({
+      x: contentLeft + (photoSlot.x + (photoSlot.offsetX ?? 0)) * contentWidth,
+      y: contentTop + (photoSlot.y + (photoSlot.offsetY ?? 0)) * contentHeight,
+      width: photoSlot.width * contentWidth,
+      height: photoSlot.height * contentHeight,
+      angle: ((photoSlot.rotation ?? 0) * Math.PI) / 180,
+      fitStrategy: photoSlot.fitStrategy,
+      preferredAspectRatio: (photoSlot.preferredAspectRatio ?? (photoSlot.width / photoSlot.height)) * contentAspectRatio,
+    }))
+  }
   const preferredSlots = theme.photoSlots
   const portraitCount = images.filter((image) => (image.naturalHeight || image.height) > (image.naturalWidth || image.width)).length
   const landscapeCount = images.length - portraitCount
@@ -2475,7 +2705,7 @@ function renderPhotoStrip(canvas, images, theme, customization = {}, natureScene
   drawUserTextObjects(context, customization.textObjects ?? [], width, height)
 }
 
-function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, selectedTheme }) {
+function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, selectedTheme, customPhotoCount }) {
   const canvasRef = useRef(null)
   const baseCanvasRef = useRef(null)
   const stageRef = useRef(null)
@@ -2500,7 +2730,7 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
   const [mobileEditorExpanded, setMobileEditorExpanded] = useState(false)
   const [selectedTextId, setSelectedTextId] = useState(null)
   const [isManipulatingText, setIsManipulatingText] = useState(false)
-  const activeTheme = getThemeByName(selectedTheme)
+  const activeTheme = getThemeByName(selectedTheme, customPhotoCount)
   const [previewDimensions, setPreviewDimensions] = useState(() => activeTheme.orientation === 'vertical' ? { width: 900, height: 1500 } : { width: 1400, height: 1000 })
   const [designOptions, setDesignOptions] = useState(() => ({
     background: 'theme',
@@ -3487,6 +3717,7 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
 
 function App() {
   const [selectedTheme, setSelectedTheme] = useState(null)
+  const [customPhotoCount, setCustomPhotoCount] = useState(4)
   const [screen, setScreen] = useState('landing')
   const [cameraStatus, setCameraStatus] = useState('idle')
   const [cameraError, setCameraError] = useState('')
@@ -3506,7 +3737,12 @@ function App() {
   const streamRef = useRef(null)
   const requestIdRef = useRef(0)
   const screenRef = useRef(screen)
-  const requiredPhotoCount = selectedTheme ? getThemeByName(selectedTheme).requiredPhotoCount : 3
+  const handleSetCustomPhotoCount = (count) => {
+    const validCount = Math.max(1, Math.min(6, Number(count) || 4))
+    activeCustomStripPhotoCount = validCount
+    setCustomPhotoCount(validCount)
+  }
+  const requiredPhotoCount = selectedTheme ? getThemeByName(selectedTheme, customPhotoCount).requiredPhotoCount : 3
 
   useEffect(() => {
     screenRef.current = screen
@@ -3603,7 +3839,8 @@ function App() {
   }
 
   const uploadPhotos = async (files) => {
-    const validationError = validateImageFiles(files, requiredPhotoCount, getThemeByName(selectedTheme).name)
+    const currentTheme = getThemeByName(selectedTheme, customPhotoCount)
+    const validationError = validateImageFiles(files, currentTheme.requiredPhotoCount, currentTheme.name)
     if (validationError) throw new Error(validationError)
     const photos = await Promise.all(files.map(normalizeImageFile))
     setCapturedPhotos(photos)
@@ -3764,6 +4001,8 @@ function App() {
         <LandingPage
           selectedTheme={selectedTheme}
           setSelectedTheme={setSelectedTheme}
+          customPhotoCount={customPhotoCount}
+          setCustomPhotoCount={handleSetCustomPhotoCount}
           onContinue={() => {
             setCapturedPhotos([])
             setPhotoNumber(1)
@@ -3775,8 +4014,10 @@ function App() {
           <BoothHeader selectedTheme={selectedTheme} onBack={leavePhotobooth} />
           {screen === 'source' && (
             <SourceChooser
-              key={selectedTheme}
+              key={`${selectedTheme}-${customPhotoCount}`}
               selectedTheme={selectedTheme}
+              customPhotoCount={customPhotoCount}
+              onSetCustomPhotoCount={handleSetCustomPhotoCount}
               onTakePhotos={() => {
                 setCapturedPhotos([])
                 setPhotoNumber(1)
@@ -3807,6 +4048,7 @@ function App() {
               onContinue={() => setScreen('finished')}
               onRetake={retakePhotos}
               selectedTheme={selectedTheme}
+              customPhotoCount={customPhotoCount}
             />
           )}
           {screen === 'finished' && (
@@ -3816,6 +4058,7 @@ function App() {
               onRetake={retakePhotos}
               onCreateNewStrip={createNewStrip}
               selectedTheme={selectedTheme}
+              customPhotoCount={customPhotoCount}
             />
           )}
         </div>

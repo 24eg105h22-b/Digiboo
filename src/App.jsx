@@ -2378,8 +2378,6 @@ function loadNatureSceneImage(theme, width, height) {
   return promise
 }
 
-const PHOTO_ROTATION_SENSITIVITY = 0.62
-
 function getDefaultPhotoTransform() {
   return { offsetX: 0, offsetY: 0, rotation: 0 }
 }
@@ -2484,7 +2482,7 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
   const photoFrameRefs = useRef(new Map())
   const textHitRefs = useRef(new Map())
   const textObjectRefs = useRef(new Map())
-  const textManipulationRef = useRef(null)
+  const activeGestureRef = useRef(null)
   const textIdRef = useRef(0)
   const [renderStatus, setRenderStatus] = useState('rendering')
   const [renderError, setRenderError] = useState('')
@@ -2516,7 +2514,6 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
     textObjects: [],
   }))
   const exportResourcesRef = useRef({ blob: null, url: null, expiresAt: null })
-  const photoManipulationRef = useRef(null)
   const expiredRef = useRef(false)
 
   const clearExpiredDownloadState = useCallback(() => {
@@ -2653,18 +2650,19 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
   }
 
   const beginTextManipulation = (event, textObject, mode) => {
-    if (event.button !== 0) return
+    if (event.button !== 0 && event.pointerType !== 'touch') return
     event.preventDefault()
     event.stopPropagation()
-    event.currentTarget.setPointerCapture(event.pointerId)
     const element = textHitRefs.current.get(textObject.id)
     const bounds = element?.getBoundingClientRect()
     const centerX = bounds ? bounds.left + bounds.width / 2 : event.clientX
     const centerY = bounds ? bounds.top + bounds.height / 2 : event.clientY
-    textManipulationRef.current = {
+    activeGestureRef.current = {
+      type: 'text',
       id: textObject.id,
       mode,
       pointerId: event.pointerId,
+      pointerType: event.pointerType || 'mouse',
       pointerStartX: event.clientX,
       pointerStartY: event.clientY,
       startX: textObject.x,
@@ -2680,14 +2678,22 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
       frameId: 0,
       moved: false,
     }
+    if (event.currentTarget?.setPointerCapture) {
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId)
+      } catch {
+        // Ignore pointer capture failures before the pointer is actually active.
+      }
+    }
+    setSelectedPhotoIndex(null)
     setSelectedTextId(textObject.id)
     setActiveEditorTab('text')
     setIsManipulatingText(true)
   }
 
   const moveTextManipulation = (event) => {
-    const manipulation = textManipulationRef.current
-    if (!manipulation || manipulation.pointerId !== event.pointerId) return
+    const manipulation = activeGestureRef.current
+    if (!manipulation || manipulation.type !== 'text' || manipulation.pointerId !== event.pointerId) return
     event.preventDefault()
     event.stopPropagation()
     manipulation.latestClientX = event.clientX
@@ -2700,14 +2706,22 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
   }
 
   const endTextManipulation = (event) => {
-    const manipulation = textManipulationRef.current
-    if (!manipulation || manipulation.pointerId !== event.pointerId) return
+    const manipulation = activeGestureRef.current
+    if (!manipulation || manipulation.type !== 'text' || manipulation.pointerId !== event.pointerId) return
     event.preventDefault()
     event.stopPropagation()
     if (manipulation.frameId) window.cancelAnimationFrame(manipulation.frameId)
-    if (event.type !== 'pointercancel') updateTextManipulation(manipulation, event.clientX, event.clientY)
-    else updateTextManipulation(manipulation, manipulation.latestClientX, manipulation.latestClientY)
-    textManipulationRef.current = null
+    const clientX = (event.type === 'pointercancel' || event.clientX === undefined) ? manipulation.latestClientX : event.clientX
+    const clientY = (event.type === 'pointercancel' || event.clientY === undefined) ? manipulation.latestClientY : event.clientY
+    updateTextManipulation(manipulation, clientX, clientY)
+    if (event.currentTarget?.releasePointerCapture) {
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      } catch {
+        // Ignore release failures when the pointer has already been released.
+      }
+    }
+    activeGestureRef.current = null
     if (manipulation.moved) {
       updateTextObject(manipulation.id, {
         x: manipulation.x,
@@ -2758,11 +2772,6 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
     if (event.button !== 0 && event.pointerType !== 'touch') return
     event.preventDefault()
     event.stopPropagation()
-    try {
-      if (event.currentTarget?.setPointerCapture) event.currentTarget.setPointerCapture(event.pointerId)
-    } catch {
-      // Some browsers reject capture when the pointer is not actively down; the drag still works with live events.
-    }
     const frameElement = event.currentTarget.closest('.strip-photo-frame')
     const position = photoFrames[photoIndex]
     const transform = normalizedPhotoTransforms[photoIndex]
@@ -2770,23 +2779,35 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
     const frameBounds = frameElement?.getBoundingClientRect() ?? event.currentTarget.getBoundingClientRect()
     const centerX = frameBounds.left + frameBounds.width / 2
     const centerY = frameBounds.top + frameBounds.height / 2
-    photoManipulationRef.current = {
-      photoIndex,
+    activeGestureRef.current = {
+      type: 'photo',
+      id: photoIndex,
       mode,
       pointerId: event.pointerId,
+      pointerType: event.pointerType || 'mouse',
       startClientX: event.clientX,
       startClientY: event.clientY,
       startOffsetX: transform.offsetX,
       startOffsetY: transform.offsetY,
       startRotation: transform.rotation,
+      rotation: transform.rotation,
       centerX,
       centerY,
       previousAngle: Math.atan2(event.clientY - centerY, event.clientX - centerX),
       latestClientX: event.clientX,
       latestClientY: event.clientY,
       frameId: 0,
+      moved: false,
       frameElement,
     }
+    if (event.currentTarget?.setPointerCapture) {
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId)
+      } catch {
+        // Ignore pointer capture failures when the browser rejects a transient pointer.
+      }
+    }
+    setSelectedTextId(null)
     setSelectedPhotoIndex(photoIndex)
   }
 
@@ -2803,8 +2824,8 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
   const updatePhotoManipulation = (manipulation, clientX, clientY) => {
     const stage = stageRef.current
     const canvas = canvasRef.current
-    const position = photoFrames[manipulation.photoIndex]
-    const currentTransform = normalizedPhotoTransforms[manipulation.photoIndex]
+    const position = photoFrames[manipulation.id]
+    const currentTransform = normalizedPhotoTransforms[manipulation.id]
     if (!stage || !canvas || !position) return
 
     if (manipulation.mode === 'move') {
@@ -2815,10 +2836,11 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
         offsetX: manipulation.startOffsetX + deltaX,
         offsetY: manipulation.startOffsetY + deltaY,
       }, canvas.width, canvas.height)
-      syncPhotoFrameStyle(manipulation.photoIndex, nextTransform)
+      manipulation.moved ||= Math.abs(nextTransform.offsetX - currentTransform.offsetX) > 0.0001 || Math.abs(nextTransform.offsetY - currentTransform.offsetY) > 0.0001
+      syncPhotoFrameStyle(manipulation.id, nextTransform)
       setPhotoTransforms((current) => {
         const nextTransforms = [...current]
-        nextTransforms[manipulation.photoIndex] = nextTransform
+        nextTransforms[manipulation.id] = nextTransform
         return nextTransforms
       })
       clearExpiredDownloadState()
@@ -2829,22 +2851,25 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
     let rotationDelta = pointerAngle - manipulation.previousAngle
     if (rotationDelta > Math.PI) rotationDelta -= Math.PI * 2
     if (rotationDelta < -Math.PI) rotationDelta += Math.PI * 2
-    const sensitivityAdjustedDelta = rotationDelta * PHOTO_ROTATION_SENSITIVITY
-    const nextRotation = manipulation.startRotation + (sensitivityAdjustedDelta * 180) / Math.PI
+    manipulation.rotation = (manipulation.rotation ?? manipulation.startRotation) + rotationDelta
     manipulation.previousAngle = pointerAngle
-    const nextTransform = { ...currentTransform, rotation: nextRotation }
-    syncPhotoFrameStyle(manipulation.photoIndex, nextTransform)
+    manipulation.moved ||= Math.abs(manipulation.rotation - manipulation.startRotation) > 0.0001
+    const nextTransform = clampPhotoTransform(position, {
+      ...currentTransform,
+      rotation: manipulation.rotation,
+    }, canvas.width, canvas.height)
+    syncPhotoFrameStyle(manipulation.id, nextTransform)
     setPhotoTransforms((current) => {
       const nextTransforms = [...current]
-      nextTransforms[manipulation.photoIndex] = nextTransform
+      nextTransforms[manipulation.id] = nextTransform
       return nextTransforms
     })
     clearExpiredDownloadState()
   }
 
   const movePhotoManipulation = (event) => {
-    const manipulation = photoManipulationRef.current
-    if (!manipulation || manipulation.pointerId !== event.pointerId) return
+    const manipulation = activeGestureRef.current
+    if (!manipulation || manipulation.type !== 'photo' || manipulation.pointerId !== event.pointerId) return
     event.preventDefault()
     event.stopPropagation()
     manipulation.latestClientX = event.clientX
@@ -2857,14 +2882,69 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
   }
 
   const endPhotoManipulation = (event) => {
-    const manipulation = photoManipulationRef.current
-    if (!manipulation || manipulation.pointerId !== event.pointerId) return
+    const manipulation = activeGestureRef.current
+    if (!manipulation || manipulation.type !== 'photo' || manipulation.pointerId !== event.pointerId) return
     event.preventDefault()
     event.stopPropagation()
     if (manipulation.frameId) window.cancelAnimationFrame(manipulation.frameId)
-    updatePhotoManipulation(manipulation, event.clientX, event.clientY)
-    photoManipulationRef.current = null
+    const clientX = (event.type === 'pointercancel' || event.type === 'lostpointercapture' || event.clientX === undefined) ? manipulation.latestClientX : event.clientX
+    const clientY = (event.type === 'pointercancel' || event.type === 'lostpointercapture' || event.clientY === undefined) ? manipulation.latestClientY : event.clientY
+    updatePhotoManipulation(manipulation, clientX, clientY)
+    if (event.currentTarget?.releasePointerCapture) {
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      } catch {
+        // Ignore release failures when the pointer has already been released.
+      }
+    }
+    activeGestureRef.current = null
   }
+
+  const handlersRef = useRef({
+    moveTextManipulation,
+    endTextManipulation,
+    movePhotoManipulation,
+    endPhotoManipulation,
+  })
+  useEffect(() => {
+    handlersRef.current = {
+      moveTextManipulation,
+      endTextManipulation,
+      movePhotoManipulation,
+      endPhotoManipulation,
+    }
+  })
+
+  useEffect(() => {
+    const handleGlobalPointerMove = (event) => {
+      const gesture = activeGestureRef.current
+      if (!gesture || gesture.pointerId !== event.pointerId) return
+      if (gesture.type === 'text') {
+        handlersRef.current.moveTextManipulation(event)
+      } else if (gesture.type === 'photo') {
+        handlersRef.current.movePhotoManipulation(event)
+      }
+    }
+
+    const handleGlobalPointerUp = (event) => {
+      const gesture = activeGestureRef.current
+      if (!gesture || gesture.pointerId !== event.pointerId) return
+      if (gesture.type === 'text') {
+        handlersRef.current.endTextManipulation(event)
+      } else if (gesture.type === 'photo') {
+        handlersRef.current.endPhotoManipulation(event)
+      }
+    }
+
+    window.addEventListener('pointermove', handleGlobalPointerMove)
+    window.addEventListener('pointerup', handleGlobalPointerUp)
+    window.addEventListener('pointercancel', handleGlobalPointerUp)
+    return () => {
+      window.removeEventListener('pointermove', handleGlobalPointerMove)
+      window.removeEventListener('pointerup', handleGlobalPointerUp)
+      window.removeEventListener('pointercancel', handleGlobalPointerUp)
+    }
+  }, [])
 
   useEffect(() => {
     if (capturedPhotos.length === 0) return undefined
@@ -3162,7 +3242,10 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
                         key={textObject.id}
                         type="button"
                         aria-pressed={selectedTextId === textObject.id}
-                        onClick={() => setSelectedTextId(textObject.id)}
+                        onClick={() => {
+                          setSelectedTextId(textObject.id)
+                          setSelectedPhotoIndex(null)
+                        }}
                       >
                         {textObject.text.trim().slice(0, 30) || `Text ${index + 1}`}
                       </button>
@@ -3316,8 +3399,6 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
                   onPointerMove={movePhotoManipulation}
                   onPointerUp={endPhotoManipulation}
                   onPointerCancel={endPhotoManipulation}
-                  onLostPointerCapture={endPhotoManipulation}
-                  onTouchStart={(event) => event.preventDefault()}
                 />
                 {selectedPhotoIndex === index && (
                   <button
@@ -3328,8 +3409,6 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
                     onPointerMove={movePhotoManipulation}
                     onPointerUp={endPhotoManipulation}
                     onPointerCancel={endPhotoManipulation}
-                    onLostPointerCapture={endPhotoManipulation}
-                    onTouchStart={(event) => event.preventDefault()}
                   >
                     ↻
                   </button>
@@ -3372,6 +3451,7 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
                     type="button"
                     onClick={(event) => {
                       event.stopPropagation()
+                      setSelectedPhotoIndex(null)
                       setSelectedTextId(textObject.id)
                       setActiveEditorTab('text')
                     }}
@@ -3379,7 +3459,6 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
                     onPointerMove={moveTextManipulation}
                     onPointerUp={endTextManipulation}
                     onPointerCancel={endTextManipulation}
-                    onLostPointerCapture={endTextManipulation}
                   >
                     {textObject.text}
                   </button>
@@ -3392,7 +3471,6 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
                       onPointerMove={moveTextManipulation}
                       onPointerUp={endTextManipulation}
                       onPointerCancel={endTextManipulation}
-                      onLostPointerCapture={endTextManipulation}
                     >
                       ↻
                     </button>

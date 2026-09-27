@@ -1701,6 +1701,8 @@
 
 .strip-actions { display: flex; flex-wrap: wrap; gap: 9px; }
 .strip-actions .booth-button { min-width: 135px; }
+.strip-actions.is-finish-mode { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+.strip-actions.is-finish-mode .booth-button-primary { min-width: 0; width: 100%; }
 .booth-button:disabled { cursor: wait; opacity: 0.52; transform: none; }
 
 .strip-status {
@@ -1924,6 +1926,7 @@
   .strip-preview-wrap { padding: 12px 0; }
   .strip-canvas-stage { width: min(100%, 320px); }
   .strip-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .strip-actions.is-finish-mode { grid-template-columns: 1fr; }
   .strip-actions .booth-button { min-width: 0; padding-inline: 10px; }
   .source-options { grid-template-columns: 1fr; }
   .source-option { min-height: 116px; padding: 17px; }

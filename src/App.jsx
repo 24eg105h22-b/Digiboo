@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { themeDefinitions } from './themeLibrary'
 import { getNaturePhotoPath, isNaturePhotoTheme } from './naturePhotoLibrary'
 import './App.css'
@@ -2368,10 +2368,10 @@ function loadNatureSceneImage(theme, width, height) {
   const cacheKey = `${theme.backgroundStyle}:${width}:${height}`
   if (natureSceneImageCache.has(cacheKey)) return natureSceneImageCache.get(cacheKey)
 
-  const promise = new Promise((resolve) => {
+  const promise = new Promise((resolve, reject) => {
     const image = new Image()
     image.onload = () => resolve(image)
-    image.onerror = () => resolve(null)
+    image.onerror = () => reject(new Error(`The nature background for ${theme.backgroundStyle} could not be loaded.`))
     image.src = getNaturePhotoPath(theme)
   })
   natureSceneImageCache.set(cacheKey, promise)
@@ -2477,7 +2477,7 @@ function renderPhotoStrip(canvas, images, theme, customization = {}, natureScene
   drawUserTextObjects(context, customization.textObjects ?? [], width, height)
 }
 
-function FinishedStrip({ capturedPhotos, onExpire, onRetake, selectedTheme }) {
+function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, selectedTheme }) {
   const canvasRef = useRef(null)
   const baseCanvasRef = useRef(null)
   const stageRef = useRef(null)
@@ -2490,6 +2490,9 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, selectedTheme }) {
   const [renderError, setRenderError] = useState('')
   const [generatedBlob, setGeneratedBlob] = useState(null)
   const [downloadUrl, setDownloadUrl] = useState(null)
+  const [isDownloading, setIsDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState('')
+  const [isFinished, setIsFinished] = useState(false)
   const [secondsRemaining, setSecondsRemaining] = useState(60)
   const [expired, setExpired] = useState(false)
   const [photoTransforms, setPhotoTransforms] = useState([])
@@ -2530,6 +2533,7 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, selectedTheme }) {
     releaseExportResources()
     setDesignOptions((current) => ({ ...current, ...update }))
     setRenderError('')
+    setDownloadError('')
     setRenderStatus('rendering')
     setGeneratedBlob(null)
     setDownloadUrl(null)
@@ -2717,7 +2721,17 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, selectedTheme }) {
       if (Math.abs(position.x - textObject.x) < 0.0001 && Math.abs(position.y - textObject.y) < 0.0001) return textObject
       return { ...textObject, ...position }
     })
-    if (clampedObjects.some((textObject, index) => textObject !== designOptions.textObjects[index])) {
+
+    const hasValueChanges = clampedObjects.some((textObject, index) => {
+      const current = designOptions.textObjects[index]
+      return current !== textObject && (
+        Math.abs((textObject.x ?? 0) - (current.x ?? 0)) > 0.0001
+        || Math.abs((textObject.y ?? 0) - (current.y ?? 0)) > 0.0001
+        || Math.abs((textObject.rotation ?? 0) - (current.rotation ?? 0)) > 0.0001
+      )
+    })
+
+    if (hasValueChanges) {
       updateDesignOptions({ textObjects: clampedObjects })
     }
   }, [designOptions.textObjects, previewDimensions])
@@ -2730,7 +2744,10 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, selectedTheme }) {
     updateDesignOptions({ stickers: next })
   }
 
-  const normalizedPhotoTransforms = Array.from({ length: capturedPhotos.length }, (_, index) => photoTransforms[index] ?? getDefaultPhotoTransform())
+  const normalizedPhotoTransforms = useMemo(
+    () => Array.from({ length: capturedPhotos.length }, (_, index) => photoTransforms[index] ?? getDefaultPhotoTransform()),
+    [capturedPhotos.length, photoTransforms],
+  )
 
   const beginPhotoManipulation = (event, photoIndex, mode) => {
     if (event.button !== 0 && event.pointerType !== 'touch') return
@@ -2852,12 +2869,19 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, selectedTheme }) {
     baseCanvasRef.current = baseCanvas
     expiredRef.current = false
 
-    Promise.all(capturedPhotos.map(loadCapturedPhoto))
-      .then(async (images) => {
-        if (cancelled || !canvas) return null
+    const generatePreview = async () => {
+      try {
+        setRenderStatus('rendering')
+        setRenderError('')
+        setDownloadError('')
+
+        const images = await Promise.all(capturedPhotos.map(loadCapturedPhoto))
+        if (cancelled || !canvas) return
+
         const dimensions = getPhotoStripDimensions(activeTheme, images)
         const natureSceneImage = await loadNatureSceneImage(activeTheme, dimensions.width, dimensions.height)
-        if (cancelled) return null
+        if (cancelled) return
+
         const positions = getPhotoPositions(activeTheme, dimensions.width, dimensions.height, images, activeTheme.photoHeaderSpace ? 250 : 210, dimensions.height - 180)
         setPhotoFrames(positions)
         renderPhotoStrip(baseCanvas, images, activeTheme, { ...designOptions, textObjects: [] }, natureSceneImage, normalizedPhotoTransforms)
@@ -2865,15 +2889,17 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, selectedTheme }) {
         setPreviewDimensions((current) => current.width === canvas.width && current.height === canvas.height
           ? current
           : { width: canvas.width, height: canvas.height })
-        return new Promise((resolve) => {
-          canvas.toBlob(resolve, 'image/jpeg', 0.95)
+
+        const blob = await new Promise((resolve, reject) => {
+          canvas.toBlob((nextBlob) => {
+            if (!nextBlob) return reject(new Error('The JPG could not be created.'))
+            if (nextBlob.size === 0) return reject(new Error('The generated JPG was empty.'))
+            resolve(nextBlob)
+          }, 'image/jpeg', 0.95)
         })
-      })
-      .then((blob) => {
-        if (cancelled || !blob) {
-          if (!cancelled && !blob) throw new Error('The JPG could not be created.')
-          return
-        }
+
+        if (cancelled) return
+
         const url = URL.createObjectURL(blob)
         resources.blob = blob
         resources.url = url
@@ -2882,12 +2908,19 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, selectedTheme }) {
         setDownloadUrl(url)
         setSecondsRemaining(60)
         setRenderStatus('ready')
-      })
-      .catch(() => {
+      } catch (error) {
         if (cancelled) return
+        console.error(error)
         setRenderError('The photo strip could not be created. Retake your photos and try again.')
         setRenderStatus('error')
-      })
+      } finally {
+        if (!cancelled) {
+          setDownloadError('')
+        }
+      }
+    }
+
+    void generatePreview()
 
     return () => {
       cancelled = true
@@ -2924,22 +2957,47 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, selectedTheme }) {
     return () => window.clearInterval(timer)
   }, [downloadUrl, expireDownload, generatedBlob])
 
-  const downloadJpg = () => {
+  const downloadJpg = async () => {
     const resources = exportResourcesRef.current
-    if (!resources.blob || !resources.url || renderStatus !== 'ready') return
-    if (Date.now() >= resources.expiresAt) {
-      expireDownload()
-      return
-    }
+    setDownloadError('')
+    setIsDownloading(true)
 
-    const link = document.createElement('a')
-    link.href = resources.url
-    link.download = `snap-studio-${selectedTheme.toLowerCase()}-strip.jpg`
-    link.click()
+    try {
+      if (!resources.blob || !resources.url || renderStatus !== 'ready') {
+        throw new Error('Your JPG is still being prepared. Please wait a moment and try again.')
+      }
+      if (Date.now() >= resources.expiresAt) {
+        expireDownload()
+        return
+      }
+
+      const link = document.createElement('a')
+      link.href = resources.url
+      link.download = `snap-studio-${selectedTheme.toLowerCase()}-strip.jpg`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+
+      window.setTimeout(() => {
+        if (resources.url) {
+          URL.revokeObjectURL(resources.url)
+          resources.url = null
+          setDownloadUrl(null)
+        }
+      }, 1500)
+    } catch (error) {
+      console.error(error)
+      setDownloadError(error?.message || 'The JPG could not be downloaded. Please try again.')
+      setRenderError(error?.message || 'The JPG could not be downloaded. Please try again.')
+    } finally {
+      setIsDownloading(false)
+    }
   }
 
   const countdownText = `Download available for ${String(Math.floor(secondsRemaining / 60)).padStart(2, '0')}:${String(secondsRemaining % 60).padStart(2, '0')}`
   const renderedPhotoFrames = photoFrames.map((position, index) => getAdjustedPhotoPosition(position, normalizedPhotoTransforms[index]))
+  const activeDownloadStatus = downloadError || renderError
+  const isEditingMode = !isFinished
   const editorTabs = [
     { id: 'background', label: 'Background' },
     { id: 'filter', label: 'Filter' },
@@ -2957,215 +3015,235 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, selectedTheme }) {
           <p className="eyebrow"><span className="eyebrow-dot" /> THAT’S A WRAP</p>
           <h1 id="finished-title">A little strip of <em>your people.</em></h1>
           <p>Your {selectedTheme.toLowerCase()} design is ready to make your own.</p>
-          <div className="strip-actions">
-            <button
-              className="booth-button booth-button-primary"
-              type="button"
-              onClick={downloadJpg}
-              disabled={renderStatus !== 'ready' || !generatedBlob || !downloadUrl || secondsRemaining === 0 || isManipulatingText}
-            >
-              Download JPG <span aria-hidden="true">↓</span>
-            </button>
-            <button className="booth-button booth-button-secondary" type="button" onClick={onRetake}>
-              <span aria-hidden="true">↻</span> {expired ? 'Create a new strip' : 'Retake'}
-            </button>
-          </div>
-          <div className="photo-edit-list" aria-label="Edit photos">
-            {capturedPhotos.map((photo, index) => (
-              <div className="photo-edit-row" key={`photo-edit-${index}`}>
-                <span>Photo {index + 1}</span>
-                <button type="button" className={`photo-edit-button${selectedPhotoIndex === index ? ' is-selected' : ''}`} onClick={() => setSelectedPhotoIndex(index)}>
-                  Edit
+          <div className={`strip-actions${isEditingMode ? ' is-finish-mode' : ''}`}>
+            {isEditingMode ? (
+              <button
+                className="booth-button booth-button-primary"
+                type="button"
+                onClick={() => setIsFinished(true)}
+                disabled={renderStatus !== 'ready' || isManipulatingText}
+              >
+                Finish <span aria-hidden="true">✓</span>
+              </button>
+            ) : (
+              <>
+                <button
+                  className="booth-button booth-button-primary"
+                  type="button"
+                  onClick={downloadJpg}
+                  disabled={renderStatus !== 'ready' || !generatedBlob || !downloadUrl || secondsRemaining === 0 || isManipulatingText || isDownloading}
+                >
+                  {isDownloading ? 'Preparing JPG…' : 'Download JPG'} <span aria-hidden="true">↓</span>
                 </button>
-              </div>
-            ))}
+                <button className="booth-button booth-button-secondary" type="button" onClick={onRetake}>
+                  <span aria-hidden="true">↻</span> Retake
+                </button>
+                <button className="booth-button booth-button-secondary" type="button" onClick={onCreateNewStrip}>
+                  <span aria-hidden="true">✦</span> Create New Strip
+                </button>
+              </>
+            )}
           </div>
-          <p className="strip-status" role={renderError ? 'alert' : 'status'}>
+          {!isFinished && (
+            <div className="photo-edit-list" aria-label="Edit photos">
+              {capturedPhotos.map((photo, index) => (
+                <div className="photo-edit-row" key={`photo-edit-${index}`}>
+                  <span>Photo {index + 1}</span>
+                  <button type="button" className={`photo-edit-button${selectedPhotoIndex === index ? ' is-selected' : ''}`} onClick={() => setSelectedPhotoIndex(index)}>
+                    Edit
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="strip-status" role={activeDownloadStatus ? 'alert' : 'status'}>
             {expired
               ? 'Download expired — create a new strip.'
-              : renderError || (generatedBlob ? countdownText : renderStatus === 'ready' ? 'Preparing your JPG…' : 'Updating your design preview…')}
+              : activeDownloadStatus || (isDownloading ? 'Preparing your JPG…' : generatedBlob ? countdownText : renderStatus === 'ready' ? 'Preparing your JPG…' : 'Updating your design preview…')}
           </p>
           <p className="download-privacy-note">Downloaded files stay on your device; this app cannot remove a copy you saved.</p>
         </section>
-        <section className={`design-editor${mobileEditorExpanded ? ' is-expanded' : ' is-collapsed'}`} aria-label="Design customization">
-          <div className="design-editor-heading">
-            <strong>Make it yours</strong>
-            <span>{activeTheme.name}</span>
-            <button className="add-text-button" type="button" onClick={addTextObject}>Add Text</button>
-            <button
-              className="editor-sheet-toggle"
-              type="button"
-              aria-expanded={mobileEditorExpanded}
-              aria-label={mobileEditorExpanded ? 'Collapse design options' : 'Expand design options'}
-              onClick={() => setMobileEditorExpanded((expanded) => !expanded)}
-            >
-              {mobileEditorExpanded ? 'Hide' : 'Options'} <span aria-hidden="true">{mobileEditorExpanded ? '⌄' : '⌃'}</span>
-            </button>
-          </div>
-          <div className="design-tabs" role="tablist" aria-label="Design options">
-            {editorTabs.map((tab) => (
+        {!isFinished && (
+          <section className={`design-editor${mobileEditorExpanded ? ' is-expanded' : ' is-collapsed'}`} aria-label="Design customization">
+            <div className="design-editor-heading">
+              <strong>Make it yours</strong>
+              <span>{activeTheme.name}</span>
+              <button className="add-text-button" type="button" onClick={addTextObject}>Add Text</button>
               <button
-                className={`design-tab${activeEditorTab === tab.id ? ' is-active' : ''}`}
-                id={`design-tab-${tab.id}`}
-                key={tab.id}
+                className="editor-sheet-toggle"
                 type="button"
-                role="tab"
-                aria-selected={activeEditorTab === tab.id}
-                aria-controls="design-panel"
-                onClick={() => {
-                  setActiveEditorTab(tab.id)
-                  setMobileEditorExpanded(true)
-                }}
+                aria-expanded={mobileEditorExpanded}
+                aria-label={mobileEditorExpanded ? 'Collapse design options' : 'Expand design options'}
+                onClick={() => setMobileEditorExpanded((expanded) => !expanded)}
               >
-                {tab.label}
+                {mobileEditorExpanded ? 'Hide' : 'Options'} <span aria-hidden="true">{mobileEditorExpanded ? '⌄' : '⌃'}</span>
               </button>
-            ))}
-          </div>
-          <div className="design-panel" id="design-panel" role="tabpanel" aria-labelledby={`design-tab-${activeEditorTab}`}>
-            {activeEditorTab === 'background' && (
-              <label className="design-control">
-                <span>Background</span>
-                <select value={designOptions.background} onChange={(event) => updateDesignOptions({ background: event.target.value })}>
-                  {DESIGN_BACKGROUND_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </label>
-            )}
-            {activeEditorTab === 'filter' && (
-              <label className="design-control">
-                <span>Photo filter</span>
-                <select value={designOptions.filter} onChange={(event) => updateDesignOptions({ filter: event.target.value })}>
-                  {PHOTO_FILTER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </label>
-            )}
-            {activeEditorTab === 'frame' && (
-              <label className="design-control">
-                <span>Frame / overlay</span>
-                <select value={designOptions.frame} onChange={(event) => updateDesignOptions({ frame: event.target.value })}>
-                  {FRAME_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </label>
-            )}
-            {activeEditorTab === 'text' && (
-              <div className="design-text-controls">
-                <div className="text-object-list" aria-label="Text objects">
-                  {designOptions.textObjects.map((textObject, index) => (
-                    <button
-                      className={`text-object-choice${selectedTextId === textObject.id ? ' is-selected' : ''}`}
-                      key={textObject.id}
-                      type="button"
-                      aria-pressed={selectedTextId === textObject.id}
-                      onClick={() => setSelectedTextId(textObject.id)}
-                    >
-                      {textObject.text.trim().slice(0, 30) || `Text ${index + 1}`}
-                    </button>
-                  ))}
-                </div>
-                {selectedText ? (
-                  <div className="design-control design-control-wide text-object-settings">
-                    <label className="design-control">
-                      <span>Text</span>
-                      <textarea value={selectedText.text} maxLength={500} rows={2} onChange={(event) => updateTextObject(selectedText.id, { text: event.target.value })} />
-                    </label>
-                    <div className="design-text-fields">
-                      <label className="design-control">
-                        <span>Font</span>
-                        <select value={selectedText.fontFamily} onChange={(event) => updateTextObject(selectedText.id, { fontFamily: event.target.value })}>
-                          <option value="Georgia, serif">Georgia</option>
-                          <option value="'Playfair Display', Georgia, serif">Playfair Display</option>
-                          <option value="'DM Sans', sans-serif">DM Sans</option>
-                          <option value="'Courier New', monospace">Courier New</option>
-                        </select>
-                      </label>
-                      <label className="design-control">
-                        <span>Size · {selectedText.fontSize}px</span>
-                        <input type="range" min="12" max="120" step="1" value={selectedText.fontSize} onChange={(event) => updateTextObject(selectedText.id, { fontSize: Number(event.target.value) })} />
-                      </label>
-                      <label className="design-control">
-                        <span>Color</span>
-                        <input type="color" value={selectedText.color} onChange={(event) => updateTextObject(selectedText.id, { color: event.target.value })} />
-                      </label>
-                      <label className="design-control">
-                        <span>Weight</span>
-                        <select value={selectedText.weight} onChange={(event) => updateTextObject(selectedText.id, { weight: event.target.value })}>
-                          <option value="normal">Normal</option>
-                          <option value="bold">Bold</option>
-                        </select>
-                      </label>
-                      <label className="design-control">
-                        <span>Alignment</span>
-                        <select value={selectedText.alignment} onChange={(event) => updateTextObject(selectedText.id, { alignment: event.target.value })}>
-                          <option value="left">Left</option>
-                          <option value="center">Center</option>
-                          <option value="right">Right</option>
-                        </select>
-                      </label>
-                      <label className="design-control">
-                        <span>Letter spacing · {selectedText.letterSpacing}px</span>
-                        <input type="range" min="-4" max="20" step="0.5" value={selectedText.letterSpacing} onChange={(event) => updateTextObject(selectedText.id, { letterSpacing: Number(event.target.value) })} />
-                      </label>
-                      <label className="design-control">
-                        <span>Opacity · {Math.round(selectedText.opacity * 100)}%</span>
-                        <input type="range" min="0.1" max="1" step="0.05" value={selectedText.opacity} onChange={(event) => updateTextObject(selectedText.id, { opacity: Number(event.target.value) })} />
-                      </label>
-                    </div>
-                    <button
-                      className="delete-text-button"
-                      type="button"
-                      onClick={() => {
-                        const remaining = designOptions.textObjects.filter((item) => item.id !== selectedText.id)
-                        updateDesignOptions({ textObjects: remaining })
-                        setSelectedTextId(remaining.at(-1)?.id ?? null)
-                      }}
-                    >
-                      Delete Text
-                    </button>
+            </div>
+            <div className="design-tabs" role="tablist" aria-label="Design options">
+              {editorTabs.map((tab) => (
+                <button
+                  className={`design-tab${activeEditorTab === tab.id ? ' is-active' : ''}`}
+                  id={`design-tab-${tab.id}`}
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeEditorTab === tab.id}
+                  aria-controls="design-panel"
+                  onClick={() => {
+                    setActiveEditorTab(tab.id)
+                    setMobileEditorExpanded(true)
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div className="design-panel" id="design-panel" role="tabpanel" aria-labelledby={`design-tab-${activeEditorTab}`}>
+              {activeEditorTab === 'background' && (
+                <label className="design-control">
+                  <span>Background</span>
+                  <select value={designOptions.background} onChange={(event) => updateDesignOptions({ background: event.target.value })}>
+                    {DESIGN_BACKGROUND_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              )}
+              {activeEditorTab === 'filter' && (
+                <label className="design-control">
+                  <span>Photo filter</span>
+                  <select value={designOptions.filter} onChange={(event) => updateDesignOptions({ filter: event.target.value })}>
+                    {PHOTO_FILTER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              )}
+              {activeEditorTab === 'frame' && (
+                <label className="design-control">
+                  <span>Frame / overlay</span>
+                  <select value={designOptions.frame} onChange={(event) => updateDesignOptions({ frame: event.target.value })}>
+                    {FRAME_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              )}
+              {activeEditorTab === 'text' && (
+                <div className="design-text-controls">
+                  <div className="text-object-list" aria-label="Text objects">
+                    {designOptions.textObjects.map((textObject, index) => (
+                      <button
+                        className={`text-object-choice${selectedTextId === textObject.id ? ' is-selected' : ''}`}
+                        key={textObject.id}
+                        type="button"
+                        aria-pressed={selectedTextId === textObject.id}
+                        onClick={() => setSelectedTextId(textObject.id)}
+                      >
+                        {textObject.text.trim().slice(0, 30) || `Text ${index + 1}`}
+                      </button>
+                    ))}
                   </div>
-                ) : (
-                  <button className="add-text-panel-button" type="button" onClick={addTextObject}>Add Text</button>
-                )}
-              </div>
-            )}
-            {activeEditorTab === 'stickers' && (
-              <div className="sticker-groups">
-                {['Love', 'Cute', 'Party', 'Retro', 'College', 'Seasonal'].map((category) => (
-                  <fieldset className="sticker-category" key={category}>
-                    <legend>{category}</legend>
-                    <div className="sticker-options">
-                      {CUSTOM_STICKERS.filter((sticker) => sticker.category === category).map((sticker) => (
-                        <button
-                          className={`sticker-option${designOptions.stickers.includes(sticker.id) ? ' is-selected' : ''}`}
-                          key={sticker.id}
-                          type="button"
-                          aria-pressed={designOptions.stickers.includes(sticker.id)}
-                          onClick={() => toggleSticker(sticker.id)}
-                        >
-                          {sticker.label}
-                        </button>
-                      ))}
+                  {selectedText ? (
+                    <div className="design-control design-control-wide text-object-settings">
+                      <label className="design-control">
+                        <span>Text</span>
+                        <textarea value={selectedText.text} maxLength={500} rows={2} onChange={(event) => updateTextObject(selectedText.id, { text: event.target.value })} />
+                      </label>
+                      <div className="design-text-fields">
+                        <label className="design-control">
+                          <span>Font</span>
+                          <select value={selectedText.fontFamily} onChange={(event) => updateTextObject(selectedText.id, { fontFamily: event.target.value })}>
+                            <option value="Georgia, serif">Georgia</option>
+                            <option value="'Playfair Display', Georgia, serif">Playfair Display</option>
+                            <option value="'DM Sans', sans-serif">DM Sans</option>
+                            <option value="'Courier New', monospace">Courier New</option>
+                          </select>
+                        </label>
+                        <label className="design-control">
+                          <span>Size · {selectedText.fontSize}px</span>
+                          <input type="range" min="12" max="120" step="1" value={selectedText.fontSize} onChange={(event) => updateTextObject(selectedText.id, { fontSize: Number(event.target.value) })} />
+                        </label>
+                        <label className="design-control">
+                          <span>Color</span>
+                          <input type="color" value={selectedText.color} onChange={(event) => updateTextObject(selectedText.id, { color: event.target.value })} />
+                        </label>
+                        <label className="design-control">
+                          <span>Weight</span>
+                          <select value={selectedText.weight} onChange={(event) => updateTextObject(selectedText.id, { weight: event.target.value })}>
+                            <option value="normal">Normal</option>
+                            <option value="bold">Bold</option>
+                          </select>
+                        </label>
+                        <label className="design-control">
+                          <span>Alignment</span>
+                          <select value={selectedText.alignment} onChange={(event) => updateTextObject(selectedText.id, { alignment: event.target.value })}>
+                            <option value="left">Left</option>
+                            <option value="center">Center</option>
+                            <option value="right">Right</option>
+                          </select>
+                        </label>
+                        <label className="design-control">
+                          <span>Letter spacing · {selectedText.letterSpacing}px</span>
+                          <input type="range" min="-4" max="20" step="0.5" value={selectedText.letterSpacing} onChange={(event) => updateTextObject(selectedText.id, { letterSpacing: Number(event.target.value) })} />
+                        </label>
+                        <label className="design-control">
+                          <span>Opacity · {Math.round(selectedText.opacity * 100)}%</span>
+                          <input type="range" min="0.1" max="1" step="0.05" value={selectedText.opacity} onChange={(event) => updateTextObject(selectedText.id, { opacity: Number(event.target.value) })} />
+                        </label>
+                      </div>
+                      <button
+                        className="delete-text-button"
+                        type="button"
+                        onClick={() => {
+                          const remaining = designOptions.textObjects.filter((item) => item.id !== selectedText.id)
+                          updateDesignOptions({ textObjects: remaining })
+                          setSelectedTextId(remaining.at(-1)?.id ?? null)
+                        }}
+                      >
+                        Delete Text
+                      </button>
                     </div>
-                  </fieldset>
-                ))}
-                <label className="design-control">
-                  <span>Sticker size</span>
-                  <input type="range" min="0.65" max="1.5" step="0.05" value={designOptions.stickerScale} onChange={(event) => updateDesignOptions({ stickerScale: Number(event.target.value) })} />
-                </label>
-                <label className="design-control">
-                  <span>Sticker rotation</span>
-                  <input type="range" min="-18" max="18" step="1" value={designOptions.stickerRotation} onChange={(event) => updateDesignOptions({ stickerRotation: Number(event.target.value) })} />
-                </label>
-                <label className="design-control">
-                  <span>Sticker horizontal position</span>
-                  <input type="range" min="-0.08" max="0.08" step="0.01" value={designOptions.stickerOffsetX} onChange={(event) => updateDesignOptions({ stickerOffsetX: Number(event.target.value) })} />
-                </label>
-                <label className="design-control">
-                  <span>Sticker vertical position</span>
-                  <input type="range" min="-0.08" max="0.08" step="0.01" value={designOptions.stickerOffsetY} onChange={(event) => updateDesignOptions({ stickerOffsetY: Number(event.target.value) })} />
-                </label>
-              </div>
-            )}
-          </div>
-        </section>
+                  ) : (
+                    <button className="add-text-panel-button" type="button" onClick={addTextObject}>Add Text</button>
+                  )}
+                </div>
+              )}
+              {activeEditorTab === 'stickers' && (
+                <div className="sticker-groups">
+                  {['Love', 'Cute', 'Party', 'Retro', 'College', 'Seasonal'].map((category) => (
+                    <fieldset className="sticker-category" key={category}>
+                      <legend>{category}</legend>
+                      <div className="sticker-options">
+                        {CUSTOM_STICKERS.filter((sticker) => sticker.category === category).map((sticker) => (
+                          <button
+                            className={`sticker-option${designOptions.stickers.includes(sticker.id) ? ' is-selected' : ''}`}
+                            key={sticker.id}
+                            type="button"
+                            aria-pressed={designOptions.stickers.includes(sticker.id)}
+                            onClick={() => toggleSticker(sticker.id)}
+                          >
+                            {sticker.label}
+                          </button>
+                        ))}
+                      </div>
+                    </fieldset>
+                  ))}
+                  <label className="design-control">
+                    <span>Sticker size</span>
+                    <input type="range" min="0.65" max="1.5" step="0.05" value={designOptions.stickerScale} onChange={(event) => updateDesignOptions({ stickerScale: Number(event.target.value) })} />
+                  </label>
+                  <label className="design-control">
+                    <span>Sticker rotation</span>
+                    <input type="range" min="-18" max="18" step="1" value={designOptions.stickerRotation} onChange={(event) => updateDesignOptions({ stickerRotation: Number(event.target.value) })} />
+                  </label>
+                  <label className="design-control">
+                    <span>Sticker horizontal position</span>
+                    <input type="range" min="-0.08" max="0.08" step="0.01" value={designOptions.stickerOffsetX} onChange={(event) => updateDesignOptions({ stickerOffsetX: Number(event.target.value) })} />
+                  </label>
+                  <label className="design-control">
+                    <span>Sticker vertical position</span>
+                    <input type="range" min="-0.08" max="0.08" step="0.01" value={designOptions.stickerOffsetY} onChange={(event) => updateDesignOptions({ stickerOffsetY: Number(event.target.value) })} />
+                  </label>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
       </div>
       <div className="strip-preview-wrap">
         <div
@@ -3314,7 +3392,6 @@ function App() {
     errorMessage: '',
   })
   const [capturedPhotos, setCapturedPhotos] = useState([])
-  const [captureSource, setCaptureSource] = useState('camera')
   const [photoNumber, setPhotoNumber] = useState(1)
   const [countdown, setCountdown] = useState(null)
   const videoRef = useRef(null)
@@ -3379,7 +3456,7 @@ function App() {
     }
   }
 
-  const clearSessionPhotoState = () => {
+  const clearSessionPhotoState = ({ preserveTheme = false, returnToSource = false, returnToLanding = false } = {}) => {
     requestIdRef.current += 1
     stopMediaStream(streamRef.current)
     streamRef.current = null
@@ -3390,24 +3467,31 @@ function App() {
     setCountdown(null)
     setCapturedPhotos([])
     setPhotoNumber(1)
-    setCaptureSource('camera')
-    setPhotoTransforms([])
-    setSelectedPhotoIndex(null)
-  }
 
-  const leavePhotobooth = () => {
-    clearSessionPhotoState()
-    setSelectedTheme(null)
-    setScreen('landing')
-  }
+    if (!preserveTheme) {
+      setSelectedTheme(null)
+    }
 
-  const retakePhotos = () => {
-    clearSessionPhotoState()
-    if (captureSource === 'upload') {
+    if (returnToSource) {
       setScreen('source')
       return
     }
-    void requestCamera()
+
+    if (returnToLanding) {
+      setScreen('landing')
+    }
+  }
+
+  const leavePhotobooth = () => {
+    clearSessionPhotoState({ returnToLanding: true })
+  }
+
+  const retakePhotos = () => {
+    clearSessionPhotoState({ preserveTheme: true, returnToSource: true })
+  }
+
+  const createNewStrip = () => {
+    clearSessionPhotoState({ returnToLanding: true })
   }
 
   const uploadPhotos = async (files) => {
@@ -3415,7 +3499,6 @@ function App() {
     if (validationError) throw new Error(validationError)
     const photos = await Promise.all(files.map(normalizeImageFile))
     setCapturedPhotos(photos)
-    setCaptureSource('upload')
     setPhotoNumber(photos.length)
     setScreen('review')
   }
@@ -3429,7 +3512,6 @@ function App() {
     setCountdown(null)
     setCapturedPhotos([])
     setPhotoNumber(1)
-    setCaptureSource('camera')
   }
 
   useEffect(() => {
@@ -3588,7 +3670,6 @@ function App() {
               key={selectedTheme}
               selectedTheme={selectedTheme}
               onTakePhotos={() => {
-                setCaptureSource('camera')
                 setCapturedPhotos([])
                 setPhotoNumber(1)
                 void requestCamera()
@@ -3625,6 +3706,7 @@ function App() {
               capturedPhotos={capturedPhotos}
               onExpire={expireSession}
               onRetake={retakePhotos}
+              onCreateNewStrip={createNewStrip}
               selectedTheme={selectedTheme}
             />
           )}

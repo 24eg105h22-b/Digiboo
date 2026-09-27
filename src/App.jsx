@@ -2519,7 +2519,12 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
   const photoManipulationRef = useRef(null)
   const expiredRef = useRef(false)
 
-  const releaseExportResources = () => {
+  const clearExpiredDownloadState = useCallback(() => {
+    expiredRef.current = false
+    setExpired(false)
+  }, [])
+
+  const releaseExportResources = useCallback(() => {
     const resources = exportResourcesRef.current
     if (resources.url) URL.revokeObjectURL(resources.url)
     resources.blob = null
@@ -2527,9 +2532,10 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
     resources.expiresAt = null
     setDownloadUrl(null)
     setGeneratedBlob(null)
-  }
+    clearExpiredDownloadState()
+  }, [clearExpiredDownloadState])
 
-  const updateDesignOptions = (update) => {
+  const updateDesignOptions = useCallback((update) => {
     releaseExportResources()
     setDesignOptions((current) => ({ ...current, ...update }))
     setRenderError('')
@@ -2538,8 +2544,7 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
     setGeneratedBlob(null)
     setDownloadUrl(null)
     setSecondsRemaining(60)
-    setExpired(false)
-  }
+  }, [releaseExportResources])
 
   const updateTextObject = (textId, patch) => {
     updateDesignOptions({
@@ -2734,7 +2739,7 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
     if (hasValueChanges) {
       updateDesignOptions({ textObjects: clampedObjects })
     }
-  }, [designOptions.textObjects, previewDimensions])
+  }, [designOptions.textObjects, previewDimensions, updateDesignOptions])
 
   const toggleSticker = (stickerId) => {
     const selected = designOptions.stickers
@@ -2816,6 +2821,7 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
         nextTransforms[manipulation.photoIndex] = nextTransform
         return nextTransforms
       })
+      clearExpiredDownloadState()
       return
     }
 
@@ -2833,6 +2839,7 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
       nextTransforms[manipulation.photoIndex] = nextTransform
       return nextTransforms
     })
+    clearExpiredDownloadState()
   }
 
   const movePhotoManipulation = (event) => {
@@ -2890,23 +2897,6 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
           ? current
           : { width: canvas.width, height: canvas.height })
 
-        const blob = await new Promise((resolve, reject) => {
-          canvas.toBlob((nextBlob) => {
-            if (!nextBlob) return reject(new Error('The JPG could not be created.'))
-            if (nextBlob.size === 0) return reject(new Error('The generated JPG was empty.'))
-            resolve(nextBlob)
-          }, 'image/jpeg', 0.95)
-        })
-
-        if (cancelled) return
-
-        const url = URL.createObjectURL(blob)
-        resources.blob = blob
-        resources.url = url
-        resources.expiresAt = Date.now() + 60_000
-        setGeneratedBlob(blob)
-        setDownloadUrl(url)
-        setSecondsRemaining(60)
         setRenderStatus('ready')
       } catch (error) {
         if (cancelled) return
@@ -2931,6 +2921,45 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
     }
   }, [activeTheme, capturedPhotos, designOptions, normalizedPhotoTransforms, selectedTheme])
 
+  const finalizeCurrentDesign = useCallback(async () => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    try {
+      setRenderError('')
+      setDownloadError('')
+      setExpired(false)
+      expiredRef.current = false
+
+      const finalBlob = await new Promise((resolve, reject) => {
+        canvas.toBlob((nextBlob) => {
+          if (!nextBlob) return reject(new Error('The JPG could not be created.'))
+          if (nextBlob.size === 0) return reject(new Error('The generated JPG was empty.'))
+          resolve(nextBlob)
+        }, 'image/jpeg', 0.95)
+      })
+
+      const resources = exportResourcesRef.current
+      if (resources.url) {
+        URL.revokeObjectURL(resources.url)
+      }
+
+      const finalUrl = URL.createObjectURL(finalBlob)
+      resources.blob = finalBlob
+      resources.url = finalUrl
+      resources.expiresAt = Date.now() + 60_000
+      setGeneratedBlob(finalBlob)
+      setDownloadUrl(finalUrl)
+      setSecondsRemaining(60)
+      setRenderStatus('ready')
+      setIsFinished(true)
+    } catch (error) {
+      console.error(error)
+      setRenderError('The photo strip could not be created. Retake your photos and try again.')
+      setRenderStatus('error')
+    }
+  }, [])
+
   const expireDownload = useCallback(() => {
     if (expiredRef.current) return
     expiredRef.current = true
@@ -2943,7 +2972,7 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
       canvasRef.current.height = 1
     }
     onExpire()
-  }, [onExpire])
+  }, [onExpire, releaseExportResources])
 
   useEffect(() => {
     if (!downloadUrl || !generatedBlob) return undefined
@@ -2998,6 +3027,7 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
   const renderedPhotoFrames = photoFrames.map((position, index) => getAdjustedPhotoPosition(position, normalizedPhotoTransforms[index]))
   const activeDownloadStatus = downloadError || renderError
   const isEditingMode = !isFinished
+  const shouldShowExpiredMessage = expired && !isEditingMode
   const editorTabs = [
     { id: 'background', label: 'Background' },
     { id: 'filter', label: 'Filter' },
@@ -3020,7 +3050,7 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
               <button
                 className="booth-button booth-button-primary"
                 type="button"
-                onClick={() => setIsFinished(true)}
+                onClick={() => void finalizeCurrentDesign()}
                 disabled={renderStatus !== 'ready' || isManipulatingText}
               >
                 Finish <span aria-hidden="true">✓</span>
@@ -3057,7 +3087,7 @@ function FinishedStrip({ capturedPhotos, onExpire, onRetake, onCreateNewStrip, s
             </div>
           )}
           <p className="strip-status" role={activeDownloadStatus ? 'alert' : 'status'}>
-            {expired
+            {shouldShowExpiredMessage
               ? 'Download expired — create a new strip.'
               : activeDownloadStatus || (isDownloading ? 'Preparing your JPG…' : generatedBlob ? countdownText : renderStatus === 'ready' ? 'Preparing your JPG…' : 'Updating your design preview…')}
           </p>

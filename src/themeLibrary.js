@@ -1339,6 +1339,180 @@ function buildThemeLibrary() {
     })
   })
 
+  const printThemeSpecs = [
+    {
+      name: 'Ivory Botanical Editorial', category: 'Classic', photoCount: 3, orientation: 'vertical', layout: 'vertical-strip',
+      visualFamily: 'Stationery Botanical', backgroundStyle: 'print-ivory-botanical-editorial',
+      background: '#f2eddf', frame: '#fcf8ed', accent: '#77785e', text: '#34342f', slotFrameStyle: 'clean',
+      borderStyle: { kind: 'keyline', weight: 1, inset: 21, innerInset: 0 },
+      description: 'Pressed-flower edge photography on warm ivory stock with a quiet three-up print rhythm.',
+      photoSlots: [slot(0.12, 0.08, 0.76, 0.22), slot(0.12, 0.39, 0.76, 0.22), slot(0.12, 0.70, 0.76, 0.22)],
+    },
+    {
+      name: 'Burgundy Gold', category: 'Love', photoCount: 4, orientation: 'vertical', layout: 'vertical-strip',
+      visualFamily: 'Foil Stationery', backgroundStyle: 'print-burgundy-gold',
+      background: '#401323', frame: '#f5eee1', accent: '#c69b59', text: '#f5eee1', slotFrameStyle: 'clean',
+      borderStyle: { kind: 'keyline', weight: 1, inset: 20, innerInset: 0 },
+      description: 'Deep red paper, fine photographed gold-leaf rails and four evenly paced frames.',
+      photoSlots: [
+        slot(0.12, 0.06, 0.76, 0.16), slot(0.12, 0.30, 0.76, 0.16),
+        slot(0.12, 0.54, 0.76, 0.16), slot(0.12, 0.78, 0.76, 0.16),
+      ],
+    },
+    {
+      name: 'Analog Black Film', category: 'Retro', photoCount: 4, orientation: 'vertical', layout: 'vertical-strip',
+      visualFamily: 'Silver-Gelatin Negative', backgroundStyle: 'print-analog-black-film',
+      background: '#e8e1d0', frame: '#111213', accent: '#e9e4d6', text: '#f6f2e8', slotFrameStyle: 'contact',
+      borderStyle: { kind: 'film', weight: 3, inset: 18, innerInset: 0 }, photoFilter: 'grayscale(1) contrast(1.08)',
+      description: 'Scanned negative grain, cream perforations and compact monochrome booth frames.',
+      photoSlots: [
+        slot(0.12, 0.05, 0.76, 0.18), slot(0.12, 0.29, 0.76, 0.18),
+        slot(0.12, 0.53, 0.76, 0.18), slot(0.12, 0.77, 0.76, 0.18),
+      ],
+    },
+    {
+      name: 'Silver Chrome Y2K', category: 'Party', photoCount: 4, orientation: 'vertical', layout: 'grid',
+      visualFamily: 'Reflective Print Surface', backgroundStyle: 'print-silver-chrome-y2k',
+      background: '#7c858e', frame: '#f2f4f3', accent: '#d5dbe0', text: '#20262b', slotFrameStyle: 'clean',
+      borderStyle: { kind: 'keyline', weight: 2, inset: 18, innerInset: 0 },
+      description: 'Real mirror-ball reflections and cool silver stock behind a balanced four-frame grid.',
+      photoSlots: [
+        slot(0.08, 0.12, 0.41, 0.32), slot(0.51, 0.12, 0.41, 0.32),
+        slot(0.08, 0.56, 0.41, 0.32), slot(0.51, 0.56, 0.41, 0.32),
+      ],
+    },
+    {
+      name: 'Warm Newspaper', category: 'Classic', photoCount: 5, orientation: 'horizontal', layout: 'editorial',
+      visualFamily: 'Newsprint Grid', backgroundStyle: 'print-warm-newspaper',
+      background: '#e9e1ce', frame: '#f8f3e8', accent: '#5f5549', text: '#302e2a', slotFrameStyle: 'clean',
+      borderStyle: { kind: 'keyline', weight: 1, inset: 22, innerInset: 0 },
+      description: 'Blank archival newsprint, measured column rules and five photograph-led story windows.',
+      photoSlots: [
+        slot(0.08, 0.12, 0.38, 0.32), slot(0.54, 0.12, 0.38, 0.32),
+        slot(0.07, 0.59, 0.26, 0.25), slot(0.37, 0.59, 0.26, 0.25), slot(0.67, 0.59, 0.26, 0.25),
+      ],
+    },
+    {
+      name: 'Black & White Studio', category: 'Classic', photoCount: 3, orientation: 'vertical', layout: 'vertical-strip',
+      visualFamily: 'Monochrome Studio Print', backgroundStyle: 'print-black-white-studio',
+      background: '#eeece5', frame: '#fffdf7', accent: '#575957', text: '#262726', slotFrameStyle: 'clean',
+      borderStyle: { kind: 'keyline', weight: 1, inset: 23, innerInset: 0 }, photoFilter: 'grayscale(1) contrast(1.06)',
+      description: 'A restrained studio-paper print with three consistent silver-gelatin photographs.',
+      photoSlots: [slot(0.16, 0.08, 0.68, 0.20), slot(0.16, 0.40, 0.68, 0.20), slot(0.16, 0.72, 0.68, 0.20)],
+    },
+    {
+      name: 'Vintage Garden Paper', category: 'Cute', photoCount: 4, orientation: 'horizontal', layout: 'editorial',
+      visualFamily: 'Garden-Edge Photograph', backgroundStyle: 'print-vintage-garden-paper',
+      background: '#e9e2ce', frame: '#faf5e8', accent: '#74815f', text: '#363930', slotFrameStyle: 'clean',
+      borderStyle: { kind: 'keyline', weight: 1, inset: 22, innerInset: 0 },
+      description: 'Real garden foliage stays at the paper edges while one portrait leads three companions.',
+      photoSlots: [
+        slot(0.08, 0.12, 0.40, 0.76), slot(0.56, 0.12, 0.36, 0.22),
+        slot(0.56, 0.39, 0.36, 0.22), slot(0.56, 0.66, 0.36, 0.22),
+      ],
+    },
+    {
+      name: '70s Film Print', category: 'Retro', photoCount: 5, orientation: 'horizontal', layout: 'contact-sheet',
+      visualFamily: 'Warm Negative Stock', backgroundStyle: 'print-seventies-film',
+      background: '#e4d3ad', frame: '#f6e9cc', accent: '#956a43', text: '#3a3027', slotFrameStyle: 'contact',
+      borderStyle: { kind: 'keyline', weight: 2, inset: 21, innerInset: 0 }, photoFilter: 'sepia(0.12) saturate(0.88) contrast(0.96)',
+      description: 'Warm negative grain and faded print stock with five narrow cinematic portraits.',
+      photoSlots: [
+        slot(0.04, 0.18, 0.16, 0.64), slot(0.23, 0.18, 0.16, 0.64), slot(0.42, 0.18, 0.16, 0.64),
+        slot(0.61, 0.18, 0.16, 0.64), slot(0.80, 0.18, 0.16, 0.64),
+      ],
+    },
+    {
+      name: 'Deep Red Cinema', category: 'Retro', photoCount: 3, orientation: 'horizontal', layout: 'one-large-two-small',
+      visualFamily: 'Darkroom Safelight Print', backgroundStyle: 'print-deep-red-cinema',
+      background: '#4b1420', frame: '#e9dfcf', accent: '#b65450', text: '#f3e9dc', slotFrameStyle: 'contact',
+      borderStyle: { kind: 'keyline', weight: 2, inset: 20, innerInset: 0 }, photoFilter: 'saturate(0.88) contrast(1.06)',
+      description: 'A real safelight glow sits behind a wide lead frame and two supporting stills.',
+      photoSlots: [slot(0.08, 0.15, 0.52, 0.70), slot(0.66, 0.15, 0.26, 0.30), slot(0.66, 0.55, 0.26, 0.30)],
+    },
+    {
+      name: 'Soft Blue Botanical', category: 'Cute', photoCount: 3, orientation: 'vertical', layout: 'asymmetric-collage',
+      visualFamily: 'Cool Botanical Stock', backgroundStyle: 'print-soft-blue-botanical',
+      background: '#e2e9e7', frame: '#f9f8f0', accent: '#718991', text: '#313b3e', slotFrameStyle: 'clean',
+      borderStyle: { kind: 'keyline', weight: 1, inset: 21, innerInset: 0 },
+      description: 'Cool botanical photo crops and soft blue-gray paper frame a lead portrait and two details.',
+      photoSlots: [slot(0.08, 0.16, 0.44, 0.68), slot(0.60, 0.14, 0.32, 0.32), slot(0.60, 0.54, 0.32, 0.32)],
+    },
+    {
+      name: 'Old Photo Album', category: 'Retro', photoCount: 5, orientation: 'vertical', layout: 'one-large-four-small',
+      visualFamily: 'Archival Album Mount', backgroundStyle: 'print-old-photo-album',
+      background: '#dfd0b2', frame: '#f6efe0', accent: '#826a50', text: '#392f28', slotFrameStyle: 'polaroid',
+      borderStyle: { kind: 'keyline', weight: 1, inset: 22, innerInset: 0 },
+      description: 'Aged album stock holds one keepsake photograph over four small mounted memories.',
+      photoSlots: [
+        slot(0.11, 0.10, 0.78, 0.38), slot(0.11, 0.56, 0.35, 0.16), slot(0.54, 0.56, 0.35, 0.16),
+        slot(0.11, 0.77, 0.35, 0.16), slot(0.54, 0.77, 0.35, 0.16),
+      ],
+    },
+    {
+      name: 'Minimal Cream Gallery', category: 'Classic', photoCount: 4, orientation: 'horizontal', layout: 'gallery',
+      visualFamily: 'Uncoated Gallery Stock', backgroundStyle: 'print-minimal-cream-gallery',
+      background: '#f3f0e8', frame: '#fffdf8', accent: '#878176', text: '#34332f', slotFrameStyle: 'clean',
+      borderStyle: { kind: 'keyline', weight: 1, inset: 24, innerInset: 0 },
+      description: 'Uncoated cream stock, hairline framing and four balanced color photographs.',
+      photoSlots: [
+        slot(0.08, 0.13, 0.40, 0.32), slot(0.52, 0.13, 0.40, 0.32),
+        slot(0.08, 0.55, 0.40, 0.32), slot(0.52, 0.55, 0.40, 0.32),
+      ],
+    },
+  ]
+
+  printThemeSpecs.forEach((spec) => {
+    const slug = spec.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    const photoSlots = spec.photoSlots.map((photoSlot) => ({
+      ...photoSlot,
+      offsetX: 0,
+      offsetY: 0,
+      fitStrategy: 'filled-frame',
+      zIndex: layerOrder.photos,
+      layer: 'photo',
+    }))
+
+    templates.push({
+      id: `digital-${slug}`,
+      name: spec.name,
+      category: spec.category,
+      description: spec.description,
+      photoCount: spec.photoCount,
+      requiredPhotoCount: spec.photoCount,
+      orientation: spec.orientation,
+      photoHeaderSpace: false,
+      visualFamily: spec.visualFamily,
+      layout: spec.layout,
+      visualStyle: `digital-${slug}`,
+      photoSlots,
+      alternatePhotoSlots: photoSlots,
+      background: spec.background,
+      frame: spec.frame,
+      accent: spec.accent,
+      text: spec.text,
+      photoFilter: spec.photoFilter,
+      backgroundStyle: spec.backgroundStyle,
+      slotFrameStyle: spec.slotFrameStyle,
+      borderStyle: { inset: 18, weight: 2, innerInset: 0, ...spec.borderStyle },
+      decorationStyle: { kind: 'dots', size: 0, count: 0 },
+      decorations: [],
+      composition: {
+        layout: spec.layout,
+        orientation: spec.orientation,
+        photoCount: spec.photoCount,
+        canvasFormat: spec.orientation === 'vertical' ? 'portrait' : 'landscape',
+        photoSlots,
+        background: spec.backgroundStyle,
+        defaultFilter: 'original',
+        frame: spec.slotFrameStyle,
+        visualFamily: spec.visualFamily,
+        decorations: { kind: 'dots', size: 0, count: 0 },
+        stickerCategory: spec.category,
+      },
+    })
+  })
+
   return templates
 }
 

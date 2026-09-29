@@ -681,7 +681,7 @@ function LandingPage({ selectedTheme, setSelectedTheme, onContinue, customPhotoC
 
           <div className="themes-gallery-divider">
             <span className="divider-line" />
-            <span className="divider-badge">OR CHOOSE FROM 115 THEMES</span>
+            <span className="divider-badge">OR CHOOSE FROM {themes.length} THEMES</span>
             <span className="divider-line" />
           </div>
 
@@ -735,12 +735,19 @@ function LandingPage({ selectedTheme, setSelectedTheme, onContinue, customPhotoC
           {visibleThemes.length ? (
             <div className="theme-grid">
               {visibleThemes.map((theme) => (
-                <button
+                <div
                   className={`theme-card visual-${theme.visualStyle} orientation-${theme.orientation} theme-${theme.category.toLowerCase()}${selectedTheme === theme.name ? ' is-selected' : ''}`}
                   key={theme.name}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   aria-pressed={selectedTheme === theme.name}
                   onClick={() => setSelectedTheme(theme.name)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      setSelectedTheme(theme.name)
+                    }
+                  }}
                   style={{
                     '--theme-background': theme.background,
                     '--theme-accent': theme.accent,
@@ -772,7 +779,21 @@ function LandingPage({ selectedTheme, setSelectedTheme, onContinue, customPhotoC
                       <span className="layout-indicator">{theme.layout}</span>
                     </span>
                   </span>
-                </button>
+                  {selectedTheme === theme.name && (
+                    <span className="theme-card-action">
+                      <button
+                        className="theme-open-button"
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onContinue()
+                        }}
+                      >
+                        Open Theme <span aria-hidden="true">→</span>
+                      </button>
+                    </span>
+                  )}
+                </div>
               ))}
             </div>
           ) : (
@@ -780,20 +801,7 @@ function LandingPage({ selectedTheme, setSelectedTheme, onContinue, customPhotoC
           )}
           <div className="theme-continue-row">
             <p aria-live="polite">{selectedTheme ? `${selectedTheme} · ${getThemeByName(selectedTheme, customPhotoCount).requiredPhotoCount} photos` : 'Choose a theme to get started.'}</p>
-            <button
-              className="button button-primary"
-              type="button"
-              onClick={() => {
-                if (selectedTheme === 'Custom Photo Strip') {
-                  setShowPhotoCountModal(true)
-                } else {
-                  onContinue()
-                }
-              }}
-              disabled={!selectedTheme}
-            >
-              Continue <span aria-hidden="true">→</span>
-            </button>
+            <span className="theme-selection-state">{selectedTheme ? 'Selected' : 'No theme selected'}</span>
           </div>
         </section>
       </main>

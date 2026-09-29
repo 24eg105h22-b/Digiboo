@@ -14,6 +14,18 @@ const naturePhotoPaths = {
   'daisy-meadow': '/nature/daisy-meadow.jpg',
   'lakeside-trees': '/nature/lakeside-grove.jpg',
   'enchanted-woodland': '/nature/enchanted-woodland.jpg',
+  'print-ivory-botanical-editorial': '/themes/ivory-botanical-editorial.jpg',
+  'print-burgundy-gold': '/themes/burgundy-gold.jpg',
+  'print-analog-black-film': '/themes/analog-black-film.jpg',
+  'print-silver-chrome-y2k': '/themes/silver-chrome-y2k.jpg',
+  'print-warm-newspaper': '/themes/warm-newspaper.jpg',
+  'print-black-white-studio': '/themes/black-white-studio.jpg',
+  'print-vintage-garden-paper': '/themes/vintage-garden-paper.jpg',
+  'print-seventies-film': '/themes/seventies-film-print.jpg',
+  'print-deep-red-cinema': '/themes/deep-red-cinema.jpg',
+  'print-soft-blue-botanical': '/themes/soft-blue-botanical.jpg',
+  'print-old-photo-album': '/themes/old-photo-album.jpg',
+  'print-minimal-cream-gallery': '/themes/minimal-cream-gallery.jpg',
 }
 
 export function getNaturePhotoPath(theme) {
